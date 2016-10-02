@@ -1,0 +1,33 @@
+---
+title: "Belief-Desire (fNIRS Analysis)"
+author: "Kimberly A. Brink"
+date: '`r format(Sys.Date(),"%B %d, %Y")`'
+output: html_document
+---
+
+```{r load}
+beldes = read.csv('/Users/kabrink/Dropbox/Research/Michigan/fNIRS/BelDes/Syntax/meanResults.txt')
+```
+
+```{r}
+t.test(beldes$m_bel_J19,beldes$m_des_J19,paired=T)
+t.test(beldes$m_bel_L19,beldes$m_des_L19,paired=T)
+
+t.test(beldes$m_bel_J19,beldes$m_phys_J19,paired=T)
+t.test(beldes$m_bel_L19,beldes$m_phys_L19,paired=T)
+
+t.test(beldes$m_des_J19,beldes$m_phys_J19,paired=T)
+t.test(beldes$m_des_L19,beldes$m_phys_L19,paired=T)
+```
+
+```{r}
+t.test(beldes$a_bel_J19,beldes$a_des_J19,paired=T)
+t.test(beldes$a_bel_L19,beldes$a_des_L19,paired=T)
+
+t.test(beldes$a_bel_J19,beldes$a_phys_J19,paired=T)
+t.test(beldes$a_bel_L19,beldes$a_phys_L19,paired=T)
+
+t.test(beldes$a_des_J19,beldes$a_phys_J19,paired=T)
+t.test(beldes$a_des_L19,beldes$a_phys_L19,paired=T)
+```
+
