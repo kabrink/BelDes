@@ -5,29 +5,295 @@ date: '`r format(Sys.Date(),"%B %d, %Y")`'
 output: html_document
 ---
 
+```{r libraries}
+library(plyr)
+library(pander)
+```
+
 ```{r load}
-beldes = read.csv('/Users/kabrink/Dropbox/Research/Michigan/fNIRS/BelDes/Syntax/meanResults.txt')
+beldes_B_run1 = read.csv('/Users/kabrink/Dropbox/Research/Michigan/fNIRS/BelDes/Behavioral Data/BelDesfNIRS7&8_RUN1.csv',skip=1)
+beldes_B_run2 = read.csv('/Users/kabrink/Dropbox/Research/Michigan/fNIRS/BelDes/Behavioral Data/BelDesfNIRS7&8_RUN2.csv',skip=1)
+beldes_B_run3 = read.csv('/Users/kabrink/Dropbox/Research/Michigan/fNIRS/BelDes/Behavioral Data/BelDesfNIRS7&8_RUN3.csv',skip=1)
+
+beldes_correct_wavelet = read.csv('~/Dropbox/Research/Michigan/fNIRS/BelDes/Repo/meanResults_Correct_Wavelet.txt')
 ```
 
 ```{r}
-t.test(beldes$m_bel_J19,beldes$m_des_J19,paired=T)
-t.test(beldes$m_bel_L19,beldes$m_des_L19,paired=T)
-
-t.test(beldes$m_bel_J19,beldes$m_phys_J19,paired=T)
-t.test(beldes$m_bel_L19,beldes$m_phys_L19,paired=T)
-
-t.test(beldes$m_des_J19,beldes$m_phys_J19,paired=T)
-t.test(beldes$m_des_L19,beldes$m_phys_L19,paired=T)
+beldes_correct_wavelet = beldes_correct_wavelet[which(beldes_correct_wavelet$subID!="101_JM"),]
 ```
 
-```{r}
-t.test(beldes$a_bel_J19,beldes$a_des_J19,paired=T)
-t.test(beldes$a_bel_L19,beldes$a_des_L19,paired=T)
+```{r preprocessing}
+beldes_B_run1 = beldes_B_run1[,c('Subject','Sex',
+                                 'ExperimentName','Block','Condition','CTrial',
+                                 'PicTargetPhysResp.ACC','PicTargetPhysResp.RT','PicTargetPhysResp.RTTime',
+                                 'PicTargetDesResp.ACC','PicTargetDesResp.RT','PicTargetDesResp.RTTime',
+                                 'PicTargetBelResp.ACC','PicTargetBelResp.RT','PicTargetBelResp.RTTime'
+                                 )]
 
-t.test(beldes$a_bel_J19,beldes$a_phys_J19,paired=T)
-t.test(beldes$a_bel_L19,beldes$a_phys_L19,paired=T)
+beldes_B_run2 = beldes_B_run2[,c('Subject','Sex',
+                                 'ExperimentName','Block','Condition','CTrial',
+                                 'PicTargetPhysResp.ACC','PicTargetPhysResp.RT','PicTargetPhysResp.RTTime',
+                                 'PicTargetDesResp.ACC','PicTargetDesResp.RT','PicTargetDesResp.RTTime',
+                                 'PicTargetBelResp.ACC','PicTargetBelResp.RT','PicTargetBelResp.RTTime'
+                                 )]
 
-t.test(beldes$a_des_J19,beldes$a_phys_J19,paired=T)
-t.test(beldes$a_des_L19,beldes$a_phys_L19,paired=T)
+beldes_B_run3 = beldes_B_run3[,c('Subject','Sex',
+                                 'ExperimentName','Block','Condition','CTrial',
+                                 'PicTargetPhysResp.ACC','PicTargetPhysResp.RT','PicTargetPhysResp.RTTime',
+                                 'PicTargetDesResp.ACC','PicTargetDesResp.RT','PicTargetDesResp.RTTime',
+                                 'PicTargetBelResp.ACC','PicTargetBelResp.RT','PicTargetBelResp.RTTime'
+                                 )]
+
+beldes_B = rbind(beldes_B_run1,beldes_B_run2,beldes_B_run3)
 ```
 
+#Behavioral Analysis
+```{r error_rate}
+physACC = aggregate(beldes_B$PicTargetPhysResp.ACC,by=list(beldes_B$Subject),FUN=mean,na.rm=T)
+names(physACC) = c("Subject","PhysResp.ACC")
+physACC$PhysResp.ER = 1-physACC$PhysResp.ACC
+pander(physACC)
+desACC = aggregate(beldes_B$PicTargetDesResp.ACC,by=list(beldes_B$Subject),FUN=mean,na.rm=T)
+names(desACC) = c("Subject","DesResp.ACC")
+desACC$DesResp.ER = 1-desACC$DesResp.ACC
+pander(desACC)
+belACC = aggregate(beldes_B$PicTargetBelResp.ACC,by=list(beldes_B$Subject),FUN=mean,na.rm=T)
+names(belACC) = c("Subject","BelResp.ACC")
+belACC$BelResp.ER = 1-belACC$BelResp.ACC
+pander(belACC)
+
+beldes_ACC = join_all(list(physACC,desACC,belACC))
+pander(beldes_ACC)
+
+pander(tail(colMeans(beldes_ACC),-1))
+
+t.test(beldes_ACC$DesResp.ACC,beldes_ACC$BelResp.ACC,paired=T)
+
+Subject = pmatch(beldes_ACC$Subject,beldes_correct_wavelet$subID)
+beldes_correct_wavelet$Subject = beldes_ACC$Subject[!is.na(Subject)]
+
+beldes_correct_wavelet = join(beldes_correct_wavelet,beldes_ACC)
+```
+
+```{r incorrect_trials}
+beldes_incBlocks = beldes_B[which(beldes_B$PicTargetPhysResp.ACC==0|beldes_B$PicTargetDesResp.ACC==0|beldes_B$PicTargetBelResp.ACC==0),]
+beldes_incBlocks = beldes_incBlocks[,c("Subject","ExperimentName","Condition","Block")]
+beldes_incBlocks$Block = beldes_incBlocks$Block/2+.5
+beldes_incBlocks = beldes_incBlocks[order(beldes_incBlocks$Subject),]
+```
+
+```{r RT}
+physRT = aggregate(beldes_B$PicTargetPhysResp.RT,by=list(beldes_B$Subject),FUN=mean,na.rm=T)
+names(physRT) = c("Subject","PhysResp.RT")
+desRT = aggregate(beldes_B$PicTargetDesResp.RT,by=list(beldes_B$Subject),FUN=mean,na.rm=T)
+names(desRT) = c("Subject","DesResp.RT")
+belRT = aggregate(beldes_B$PicTargetBelResp.RT,by=list(beldes_B$Subject),FUN=mean,na.rm=T)
+names(belRT) = c("Subject","BelResp.RT")
+
+RT = join_all(list(physRT,desRT,belRT))
+
+pander(tail(colMeans(RT),-1))
+
+t.test(RT$DesResp.RT,RT$BelResp.RT,paired=T,na.rm=T)
+```
+
+#Neuroimaging analysis
+
+```{r remove_error}
+beldes_correct_wavelet = beldes_correct_wavelet[which(beldes_correct_wavelet$PhysResp.ER<=.20|beldes_correct_wavelet$DesResp.ER<=.20|beldes_correct_wavelet$BelResp.ER<=.20),]
+```
+
+```{r remove_bel_J19}
+#beldes_correct_wavelet$mean_bel_J19[which(beldes_correct_wavelet$subID=="104_JD")] = NA
+beldes_correct_wavelet$mean_bel_J19[which(beldes_correct_wavelet$subID=="108_RW")] = NA
+beldes_correct_wavelet$mean_bel_J19[which(beldes_correct_wavelet$subID=="114_ASB")] = NA
+beldes_correct_wavelet$mean_bel_J19[which(beldes_correct_wavelet$subID=="115_HC")] = NA
+#beldes_correct_wavelet$mean_bel_J19[which(beldes_correct_wavelet$subID=="118_ZT")] = NA
+beldes_correct_wavelet$mean_bel_J19[which(beldes_correct_wavelet$subID=="122_KD")] = NA
+beldes_correct_wavelet$mean_bel_J19[which(beldes_correct_wavelet$subID=="123_ES")] = NA
+#beldes_correct_wavelet$mean_phys_J19[which(beldes_correct_wavelet$subID=="124_CK")] = NA
+
+#beldes_correct_wavelet$area_bel_J19[which(beldes_correct_wavelet$subID=="104_JD")] = NA
+beldes_correct_wavelet$area_bel_J19[which(beldes_correct_wavelet$subID=="108_RW")] = NA
+beldes_correct_wavelet$area_bel_J19[which(beldes_correct_wavelet$subID=="114_ASB")] = NA
+beldes_correct_wavelet$area_bel_J19[which(beldes_correct_wavelet$subID=="115_HC")] = NA
+#beldes_correct_wavelet$area_bel_J19[which(beldes_correct_wavelet$subID=="118_ZT")] = NA
+beldes_correct_wavelet$area_bel_J19[which(beldes_correct_wavelet$subID=="122_KD")] = NA
+beldes_correct_wavelet$area_bel_J19[which(beldes_correct_wavelet$subID=="123_ES")] = NA
+#beldes_correct_wavelet$area_phys_J19[which(beldes_correct_wavelet$subID=="124_CK")] = NA
+
+
+#beldes_correct_wavelet$max_bel_J19[which(beldes_correct_wavelet$subID=="104_JD")] = NA
+beldes_correct_wavelet$max_bel_J19[which(beldes_correct_wavelet$subID=="108_RW")] = NA
+beldes_correct_wavelet$max_bel_J19[which(beldes_correct_wavelet$subID=="114_ASB")] = NA
+beldes_correct_wavelet$max_bel_J19[which(beldes_correct_wavelet$subID=="115_HC")] = NA
+#beldes_correct_wavelet$max_bel_J19[which(beldes_correct_wavelet$subID=="118_ZT")] = NA
+beldes_correct_wavelet$max_bel_J19[which(beldes_correct_wavelet$subID=="122_KD")] = NA
+beldes_correct_wavelet$max_bel_J19[which(beldes_correct_wavelet$subID=="123_ES")] = NA
+#beldes_correct_wavelet$max_phys_J19[which(beldes_correct_wavelet$subID=="124_CK")] = NA
+```
+
+```{r remove_bel_L19}
+beldes_correct_wavelet$mean_bel_L19[which(beldes_correct_wavelet$subID=="108_RW")] = NA
+beldes_correct_wavelet$mean_bel_L19[which(beldes_correct_wavelet$subID=="121_MT")] = NA
+beldes_correct_wavelet$mean_bel_L19[which(beldes_correct_wavelet=="123_ES")] = NA
+
+beldes_correct_wavelet$area_bel_L19[which(beldes_correct_wavelet$subID=="108_RW")] = NA
+beldes_correct_wavelet$area_bel_L19[which(beldes_correct_wavelet$subID=="121_MT")] = NA
+beldes_correct_wavelet$area_bel_L19[which(beldes_correct_wavelet=="123_ES")] = NA
+
+beldes_correct_wavelet$max_bel_L19[which(beldes_correct_wavelet$subID=="108_RW")] = NA
+beldes_correct_wavelet$max_bel_L19[which(beldes_correct_wavelet$subID=="121_MT")] = NA
+beldes_correct_wavelet$max_bel_L19[which(beldes_correct_wavelet=="123_ES")] = NA
+```
+
+```{r remove_des_J19}
+beldes_correct_wavelet$mean_des_J19[which(beldes_correct_wavelet$subID=="107_CW")] = NA
+beldes_correct_wavelet$mean_des_J19[which(beldes_correct_wavelet$subID=="109_LM")] = NA
+#beldes_correct_wavelet$mean_des_J19[which(beldes_correct_wavelet$subID=="121_MT")] = NA
+beldes_correct_wavelet$mean_des_J19[which(beldes_correct_wavelet$subID=="122_KD")] = NA
+
+beldes_correct_wavelet$area_des_J19[which(beldes_correct_wavelet$subID=="107_CW")] = NA
+beldes_correct_wavelet$area_des_J19[which(beldes_correct_wavelet$subID=="109_LM")] = NA
+#beldes_correct_wavelet$area_des_J19[which(beldes_correct_wavelet$subID=="121_MT")] = NA
+beldes_correct_wavelet$area_des_J19[which(beldes_correct_wavelet$subID=="122_KD")] = NA
+
+beldes_correct_wavelet$max_des_J19[which(beldes_correct_wavelet$subID=="107_CW")] = NA
+beldes_correct_wavelet$max_des_J19[which(beldes_correct_wavelet$subID=="109_LM")] = NA
+#beldes_correct_wavelet$max_des_J19[which(beldes_correct_wavelet$subID=="121_MT")] = NA
+beldes_correct_wavelet$max_des_J19[which(beldes_correct_wavelet$subID=="122_KD")] = NA
+```
+
+```{r remove_des_L19}
+beldes_correct_wavelet$mean_des_L19[which(beldes_correct_wavelet$subID=="108_RW")] = NA
+
+beldes_correct_wavelet$area_des_L19[which(beldes_correct_wavelet$subID=="108_RW")] = NA
+
+beldes_correct_wavelet$max_des_L19[which(beldes_correct_wavelet$subID=="108_RW")] = NA
+```
+
+```{r remove_phys_J19}
+beldes_correct_wavelet$mean_phys_J19[which(beldes_correct_wavelet$subID=="107_CW")] = NA
+beldes_correct_wavelet$mean_phys_J19[which(beldes_correct_wavelet$subID=="108_RW")] = NA
+beldes_correct_wavelet$mean_phys_J19[which(beldes_correct_wavelet$subID=="109_LM")] = NA
+beldes_correct_wavelet$mean_phys_J19[which(beldes_correct_wavelet$subID=="113_ID")] = NA
+
+beldes_correct_wavelet$area_phys_J19[which(beldes_correct_wavelet$subID=="107_CW")] = NA
+beldes_correct_wavelet$area_phys_J19[which(beldes_correct_wavelet$subID=="108_RW")] = NA
+beldes_correct_wavelet$area_phys_J19[which(beldes_correct_wavelet$subID=="109_LM")] = NA
+beldes_correct_wavelet$area_phys_J19[which(beldes_correct_wavelet$subID=="113_ID")] = NA
+
+beldes_correct_wavelet$max_phys_J19[which(beldes_correct_wavelet$subID=="107_CW")] = NA
+beldes_correct_wavelet$max_phys_J19[which(beldes_correct_wavelet$subID=="108_RW")] = NA
+beldes_correct_wavelet$max_phys_J19[which(beldes_correct_wavelet$subID=="109_LM")] = NA
+beldes_correct_wavelet$max_phys_J19[which(beldes_correct_wavelet$subID=="113_ID")] = NA
+```
+
+```{r remove_phys_L19}
+beldes_correct_wavelet$mean_des_L19[which(beldes_correct_wavelet$subID=="109_LM")] = NA
+beldes_correct_wavelet$mean_des_L19[which(beldes_correct_wavelet$subID=="122_KD")] = NA
+
+beldes_correct_wavelet$area_des_L19[which(beldes_correct_wavelet$subID=="109_LM")] = NA
+beldes_correct_wavelet$area_des_L19[which(beldes_correct_wavelet$subID=="122_KD")] = NA
+
+beldes_correct_wavelet$max_des_L19[which(beldes_correct_wavelet$subID=="109_LM")] = NA
+beldes_correct_wavelet$max_des_L19[which(beldes_correct_wavelet$subID=="122_KD")] = NA
+```
+
+##Mean analysis of Correct Dataset with Wavelet Motion Correction
+```{r mean_analysis_wavelet_correct}
+
+#Belief compared to desire in J19
+t.test(beldes_correct_wavelet$mean_bel_J19,
+       beldes_correct_wavelet$mean_des_J19,paired=T)
+#Belief compared to desire in L19
+t.test(beldes_correct_wavelet$mean_bel_L19,
+       beldes_correct_wavelet$mean_des_L19,paired=T)
+#Belief compared to physical in J19
+t.test(beldes_correct_wavelet$mean_bel_J19,
+       beldes_correct_wavelet$mean_phys_J19,paired=T)
+#Belief compared to physical in L19
+t.test(beldes_correct_wavelet$mean_bel_L19,
+       beldes_correct_wavelet$mean_phys_L19,paired=T)
+#Desire compared to physical in J19
+t.test(beldes_correct_wavelet$mean_des_J19,
+       beldes_correct_wavelet$mean_phys_J19,
+       paired=T)
+#Desire compared to physical in L19
+t.test(beldes_correct_wavelet$mean_des_L19,
+       beldes_correct_wavelet$mean_phys_L19,
+       paired=T)
+#Belief compared to baseline in J19
+t.test(beldes_correct_wavelet$mean_bel_J19,
+       beldes_correct_wavelet$mean_base_J19,
+       paired=T)
+#Belief compared to baseline in L19
+t.test(beldes_correct_wavelet$mean_bel_L19,
+       beldes_correct_wavelet$mean_base_L19,
+       paired=T)
+#Desire compared to baseline in J19
+t.test(beldes_correct_wavelet$mean_des_J19,
+       beldes_correct_wavelet$mean_base_J19,
+       paired=T)
+#Desire compared to baseline in L19
+t.test(beldes_correct_wavelet$mean_des_L19,
+       beldes_correct_wavelet$mean_base_L19,
+       paired=T)
+```
+
+##Area under the curve analysis of Correct Dataset with Wavelet Motion Correction
+```{r area_analysis_wavelet_correct}
+
+#Belief compared to desire in J19
+t.test(beldes_correct_wavelet$area_bel_J19,
+       beldes_correct_wavelet$area_des_J19,
+       paired=T)
+#Belief compared to desire in L19
+t.test(beldes_correct_wavelet$area_bel_L19,
+       beldes_correct_wavelet$area_des_L19,
+       paired=T)
+#Belief compared to physical in J19
+t.test(beldes_correct_wavelet$area_bel_J19,
+       beldes_correct_wavelet$area_phys_J19,
+       paired=T)
+#Belief compared to physical in L19
+t.test(beldes_correct_wavelet$area_bel_L19,
+       beldes_correct_wavelet$area_phys_L19,
+       paired=T)
+#Desire compared to physical in J19
+t.test(beldes_correct_wavelet$area_des_J19,
+       beldes_correct_wavelet$area_phys_J19,
+       paired=T)
+#Desire compared to physical in L19
+t.test(beldes_correct_wavelet$area_des_L19,
+       beldes_correct_wavelet$area_phys_L19,
+       paired=T)
+```
+
+##Max analysis of Correct Dataset with Wavelet Motion Correction
+```{r max_analysis_wavelet_correct}
+#Belief compared to desire in J19
+t.test(beldes_correct_wavelet$max_bel_J19,
+       beldes_correct_wavelet$max_des_J19,
+       paired=T)
+#Belief compared to desire in L19
+t.test(beldes_correct_wavelet$max_bel_L19,
+       beldes_correct_wavelet$max_des_L19,
+       paired=T)
+#Belief compared to physical in J19
+t.test(beldes_correct_wavelet$max_bel_J19,
+       beldes_correct_wavelet$max_phys_J19,
+       paired=T)
+#Belief compared to physical in L19
+t.test(beldes_correct_wavelet$max_bel_L19,
+       beldes_correct_wavelet$max_phys_L19,
+       paired=T)
+#Desire compared to physical in J19
+t.test(beldes_correct_wavelet$max_des_J19,
+       beldes_correct_wavelet$max_phys_J19,
+       paired=T)
+#Desire compared to physical in L19
+t.test(beldes_correct_wavelet$max_des_L19,
+       beldes_correct_wavelet$max_phys_L19,
+       paired=T)
+```

@@ -1,0 +1,485 @@
+---
+title: "Belief-Desire: fNIRS Analysis - PCA"
+author: "Kimberly A. Brink"
+date: '`r format(Sys.Date(),"%B %d, %Y")`'
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(fig.width = 9, fig.height = 6.5, echo=FALSE, warning=FALSE, message=FALSE)
+```
+
+```{r standard_error}
+std.error <- function(x) sd(x,na.rm=TRUE)/sqrt(length(x))
+```
+
+```{r libraries}
+library(plyr)
+library(pander)
+library(reshape2)
+library(ggplot2)
+```
+
+```{r load}
+beldes_B_run1 = read.csv('/Users/kabrink/Dropbox/Research/Michigan/fNIRS/BelDes/Behavioral Data/BelDesfNIRS7&8_RUN1.csv',skip=1)
+beldes_B_run2 = read.csv('/Users/kabrink/Dropbox/Research/Michigan/fNIRS/BelDes/Behavioral Data/BelDesfNIRS7&8_RUN2.csv',skip=1)
+beldes_B_run3 = read.csv('/Users/kabrink/Dropbox/Research/Michigan/fNIRS/BelDes/Behavioral Data/BelDesfNIRS7&8_RUN3.csv',skip=1)
+
+beldes = read.csv('~/Dropbox/Research/Michigan/fNIRS/BelDes/Repo/meanResults_Correct_PCA.txt')
+```
+
+```{r}
+beldes = beldes[which(beldes$subID!="101_JM"),]
+```
+
+```{r preprocessing}
+beldes_B_run1 = beldes_B_run1[,c('Subject','Sex',
+                                 'ExperimentName','Block','Condition','CTrial',
+                                 'PicTargetPhysResp.ACC','PicTargetPhysResp.RT','PicTargetPhysResp.RTTime',
+                                 'PicTargetDesResp.ACC','PicTargetDesResp.RT','PicTargetDesResp.RTTime',
+                                 'PicTargetBelResp.ACC','PicTargetBelResp.RT','PicTargetBelResp.RTTime'
+                                 )]
+
+beldes_B_run2 = beldes_B_run2[,c('Subject','Sex',
+                                 'ExperimentName','Block','Condition','CTrial',
+                                 'PicTargetPhysResp.ACC','PicTargetPhysResp.RT','PicTargetPhysResp.RTTime',
+                                 'PicTargetDesResp.ACC','PicTargetDesResp.RT','PicTargetDesResp.RTTime',
+                                 'PicTargetBelResp.ACC','PicTargetBelResp.RT','PicTargetBelResp.RTTime'
+                                 )]
+
+beldes_B_run3 = beldes_B_run3[,c('Subject','Sex',
+                                 'ExperimentName','Block','Condition','CTrial',
+                                 'PicTargetPhysResp.ACC','PicTargetPhysResp.RT','PicTargetPhysResp.RTTime',
+                                 'PicTargetDesResp.ACC','PicTargetDesResp.RT','PicTargetDesResp.RTTime',
+                                 'PicTargetBelResp.ACC','PicTargetBelResp.RT','PicTargetBelResp.RTTime'
+                                 )]
+
+beldes_B = rbind(beldes_B_run1,beldes_B_run2,beldes_B_run3)
+```
+
+#Behavioral Analysis
+```{r error_rate}
+physACC = aggregate(beldes_B$PicTargetPhysResp.ACC,by=list(beldes_B$Subject),FUN=mean,na.rm=T)
+names(physACC) = c("Subject","PhysResp.ACC")
+physACC$PhysResp.ER = 1-physACC$PhysResp.ACC
+desACC = aggregate(beldes_B$PicTargetDesResp.ACC,by=list(beldes_B$Subject),FUN=mean,na.rm=T)
+names(desACC) = c("Subject","DesResp.ACC")
+desACC$DesResp.ER = 1-desACC$DesResp.ACC
+belACC = aggregate(beldes_B$PicTargetBelResp.ACC,by=list(beldes_B$Subject),FUN=mean,na.rm=T)
+names(belACC) = c("Subject","BelResp.ACC")
+belACC$BelResp.ER = 1-belACC$BelResp.ACC
+
+beldes_ACC = join_all(list(physACC,desACC,belACC))
+pander(beldes_ACC)
+
+pander(tail(colMeans(beldes_ACC),-1))
+
+t.test(beldes_ACC$DesResp.ACC,beldes_ACC$BelResp.ACC,paired=T)
+
+Subject = pmatch(beldes_ACC$Subject,beldes$subID)
+beldes$Subject = beldes_ACC$Subject[!is.na(Subject)]
+
+beldes = join(beldes,beldes_ACC)
+```
+
+```{r incorrect_trials}
+beldes_incBlocks = beldes_B[which(beldes_B$PicTargetPhysResp.ACC==0|beldes_B$PicTargetDesResp.ACC==0|beldes_B$PicTargetBelResp.ACC==0),]
+beldes_incBlocks = beldes_incBlocks[,c("Subject","ExperimentName","Condition","Block")]
+beldes_incBlocks$Block = beldes_incBlocks$Block/2+.5
+beldes_incBlocks = beldes_incBlocks[order(beldes_incBlocks$Subject),]
+```
+
+```{r RT}
+physRT = aggregate(beldes_B$PicTargetPhysResp.RT,by=list(beldes_B$Subject),FUN=mean,na.rm=T)
+names(physRT) = c("Subject","PhysResp.RT")
+desRT = aggregate(beldes_B$PicTargetDesResp.RT,by=list(beldes_B$Subject),FUN=mean,na.rm=T)
+names(desRT) = c("Subject","DesResp.RT")
+belRT = aggregate(beldes_B$PicTargetBelResp.RT,by=list(beldes_B$Subject),FUN=mean,na.rm=T)
+names(belRT) = c("Subject","BelResp.RT")
+
+RT = join_all(list(physRT,desRT,belRT))
+
+pander(tail(colMeans(RT),-1))
+
+t.test(RT$DesResp.RT,RT$BelResp.RT,paired=T,na.rm=T)
+```
+
+#Neuroimaging analysis
+
+```{r remove_error, eval=TRUE}
+phys_err_lim = mean(beldes$PhysResp.ER)+(2*std.error(beldes$PhysResp.ER))
+phys_err_lim
+des_err_lim = mean(beldes$DesResp.ER)+(2*std.error(beldes$DesResp.ER))
+des_err_lim
+bel_err_lim = mean(beldes$BelResp.ER)+(2*std.error(beldes$BelResp.ER))
+bel_err_lim
+
+beldes$avg_err = (beldes$PhysResp.ER+beldes$DesResp.ER+beldes$BelResp.ER)/3
+err_lim = mean(beldes$avg_err)+(2*std.error(beldes$avg_err))
+err_lim
+
+#beldes = beldes[which(beldes$PhysResp.ER<=phys_err_lim&beldes$DesResp.ER<=des_err_lim&beldes$BelResp.ER<=bel_err_lim),]
+#beldes = beldes[which(beldes$avg_err<=err_lim),]
+beldes = beldes[which(beldes$PhysResp.ER<=.5&beldes$DesResp.ER<=.5&beldes$BelResp.ER<=.5),]
+```
+
+```{r remove_bel_J19}
+beldes$mean_bel_J19[which(beldes$subID=="113_ID")] = NA
+beldes$mean_bel_J19[which(beldes$subID=="123_ES")] = NA
+
+beldes$area_bel_J19[which(beldes$subID=="113_ID")] = NA
+beldes$area_bel_J19[which(beldes$subID=="123_ES")] = NA
+
+beldes$max_bel_J19[which(beldes$subID=="113_ID")] = NA
+beldes$max_bel_J19[which(beldes$subID=="123_ES")] = NA
+```
+
+```{r remove_bel_L19}
+beldes$mean_bel_L19[which(beldes$subID=="113_ID")] = NA
+
+beldes$area_bel_L19[which(beldes$subID=="113_ID")] = NA
+
+beldes$max_bel_L19[which(beldes$subID=="113_ID")] = NA
+```
+
+```{r remove_des_J19}
+beldes$mean_des_J19[which(beldes$subID=="113_ID")] = NA
+
+beldes$area_des_J19[which(beldes$subID=="113_ID")] = NA
+
+beldes$max_des_J19[which(beldes$subID=="113_ID")] = NA
+
+```
+
+```{r remove_des_L19}
+beldes$mean_des_L19[which(beldes$subID=="113_ID")] = NA
+
+beldes$area_des_L19[which(beldes$subID=="113_ID")] = NA
+
+beldes$max_des_L19[which(beldes$subID=="113_ID")] = NA
+```
+
+```{r remove_phys_J19}
+beldes$mean_phys_J19[which(beldes$subID=="119_GM")] = NA
+
+beldes$area_phys_J19[which(beldes$subID=="119_GM")] = NA
+
+beldes$max_phys_J19[which(beldes$subID=="119_GM")] = NA
+```
+
+```{r remove_phys_L19}
+```
+
+```{r}
+beldes$mean_phys = (beldes$mean_phys_J19+beldes$mean_phys_L19)/2
+beldes$mean_des = (beldes$mean_des_J19+beldes$mean_des_L19)/2
+beldes$mean_bel = (beldes$mean_bel_J19+beldes$mean_bel_L19)/2
+beldes$mean_base = (beldes$mean_base_J19+beldes$mean_base_L19)/2
+beldes$mean_mental = (beldes$mean_des+beldes$mean_bel)/2
+
+beldes$area_phys = (beldes$area_phys_J19+beldes$area_phys_L19)/2
+beldes$area_des = (beldes$area_des_J19+beldes$area_des_L19)/2
+beldes$area_bel = (beldes$area_bel_J19+beldes$area_bel_L19)/2
+beldes$area_base = (beldes$area_base_J19+beldes$area_base_L19)/2
+beldes$area_mental = (beldes$area_des+beldes$area_bel)/2
+```
+
+##Mean analysis 
+```{r mean_analysis_by_channel, eval=FALSE}
+
+#Belief compared to desire in J19
+t.test(beldes$mean_bel_J19,
+       beldes$mean_des_J19,paired=T)
+#Belief compared to desire in L19
+t.test(beldes$mean_bel_L19,
+       beldes$mean_des_L19,paired=T)
+#Belief compared to physical in J19
+t.test(beldes$mean_bel_J19,
+       beldes$mean_phys_J19,paired=T)
+#Belief compared to physical in L19
+t.test(beldes$mean_bel_L19,
+       beldes$mean_phys_L19,paired=T)
+#Desire compared to physical in J19
+t.test(beldes$mean_des_J19,
+       beldes$mean_phys_J19,
+       paired=T)
+#Desire compared to physical in L19
+t.test(beldes$mean_des_L19,
+       beldes$mean_phys_L19,
+       paired=T)
+#Belief compared to baseline in J19
+t.test(beldes$mean_bel_J19,
+       beldes$mean_base_J19,
+       paired=T)
+#Belief compared to baseline in L19
+t.test(beldes$mean_bel_L19,
+       beldes$mean_base_L19,
+       paired=T)
+#Desire compared to baseline in J19
+t.test(beldes$mean_des_J19,
+       beldes$mean_base_J19,
+       paired=T)
+#Desire compared to baseline in L19
+t.test(beldes$mean_des_L19,
+       beldes$mean_base_L19,
+       paired=T)
+#Physical compared to baseline in J19
+t.test(beldes$mean_phys_J19,
+       beldes$mean_base_J19,
+       paired=T)
+#Physical compared to baseline in L19
+t.test(beldes$mean_phys_L19,
+       beldes$mean_base_L19,
+       paired=T)
+```
+
+```{r mean_analysis}
+t.test(beldes$mean_bel,
+       beldes$mean_des,
+       paired=T)
+
+t.test(beldes$mean_bel,
+       beldes$mean_phys,
+       paired=T)
+
+t.test(beldes$mean_des,
+       beldes$mean_phys,
+       paired=T)
+
+t.test(beldes$mean_bel,
+       beldes$mean_base,
+       paired=T)
+
+t.test(beldes$mean_des,
+       beldes$mean_base,
+       paired=T)
+
+t.test(beldes$mean_phys,
+       beldes$mean_base,
+       paired=T)
+
+t.test(beldes$mean_mental,
+       beldes$mean_phys,
+       paired = T)
+
+t.test(beldes$mean_mental,
+       beldes$mean_base,
+       paired=T)
+```
+
+##Area under the curve analysis
+```{r area_analysis_by_channel, eval=FALSE}
+
+#Belief compared to desire in J19
+t.test(beldes$area_bel_J19,
+       beldes$area_des_J19,
+       paired=T)
+#Belief compared to desire in L19
+t.test(beldes$area_bel_L19,
+       beldes$area_des_L19,
+       paired=T)
+#Belief compared to physical in J19
+t.test(beldes$area_bel_J19,
+       beldes$area_phys_J19,
+       paired=T)
+#Belief compared to physical in L19
+t.test(beldes$area_bel_L19,
+       beldes$area_phys_L19,
+       paired=T)
+#Desire compared to physical in J19
+t.test(beldes$area_des_J19,
+       beldes$area_phys_J19,
+       paired=T)
+#Desire compared to physical in L19
+t.test(beldes$area_des_L19,
+       beldes$area_phys_L19,
+       paired=T)
+#Belief compared to baseline in J19
+t.test(beldes$area_bel_J19,
+       beldes$area_base_J19,
+       paired=T)
+#Belief compared to baseline in L19
+t.test(beldes$area_bel_L19,
+       beldes$area_base_L19,
+       paired=T)
+#Desire compared to baseline in J19
+t.test(beldes$area_des_J19,
+       beldes$area_base_J19,
+       paired=T)
+#Desire compared to baseline in L19
+t.test(beldes$area_des_L19,
+       beldes$area_base_L19,
+       paired=T)
+#Physical compared to baseline in J19
+t.test(beldes$area_phys_J19,
+       beldes$area_base_J19,
+       paired=T)
+#Physical compared to baseline in L19
+t.test(beldes$area_phys_L19,
+       beldes$area_base_L19,
+       paired=T)
+```
+
+```{r area_analysis}
+t.test(beldes$area_bel,
+       beldes$area_des,
+       paired=T)
+
+t.test(beldes$area_bel,
+       beldes$area_phys,
+       paired=T)
+
+t.test(beldes$area_des,
+       beldes$area_phys,
+       paired=T)
+
+t.test(beldes$area_bel,
+       beldes$area_base,
+       paired=T)
+
+t.test(beldes$area_des,
+       beldes$area_base,
+       paired=T)
+
+t.test(beldes$area_phys,
+       beldes$area_base,
+       paired=T)
+
+t.test(beldes$area_mental,
+       beldes$area_phys,
+       paired=T)
+
+t.test(beldes$area_mental,
+       beldes$area_base,
+       paired=T)
+```
+
+
+```{r max_analysis_wavelet_correct, eval=FALSE}
+#Belief compared to desire in J19
+t.test(beldes$max_bel_J19,
+       beldes$max_des_J19,
+       paired=T)
+#Belief compared to desire in L19
+t.test(beldes$max_bel_L19,
+       beldes$max_des_L19,
+       paired=T)
+#Belief compared to physical in J19
+t.test(beldes$max_bel_J19,
+       beldes$max_phys_J19,
+       paired=T)
+#Belief compared to physical in L19
+t.test(beldes$max_bel_L19,
+       beldes$max_phys_L19,
+       paired=T)
+#Desire compared to physical in J19
+t.test(beldes$max_des_J19,
+       beldes$max_phys_J19,
+       paired=T)
+#Desire compared to physical in L19
+t.test(beldes$max_des_L19,
+       beldes$max_phys_L19,
+       paired=T)
+```
+
+```{r plot_mean_differences, fig.path='Figures/', dev=c('png','postscript')}
+beldes$dif_bel_base = beldes$mean_bel - beldes$mean_base
+beldes$dif_des_base = beldes$mean_des - beldes$mean_base
+beldes$dif_phys_base = beldes$mean_phys - beldes$mean_base
+
+diffPlotData = data.frame(Condition = c("Belief>Baseline",
+                                        "Desire>Baseline",
+                                        "Physical>Baseline"),
+                          Difference = c(mean(beldes$dif_bel_base,na.rm=T),
+                                         mean(beldes$dif_des_base,na.rm=T),
+                                         mean(beldes$dif_phys_base,na.rm=T)),
+                          ci = c(
+                            std.error(beldes$dif_bel_base)*qt(.95/2+.5,length(beldes$dif_bel_base)-1),
+                            std.error(beldes$dif_des_base)*qt(.95/2+.5,length(beldes$dif_des_base)-1),
+                            std.error(beldes$dif_phys_base)*qt(.95/2+.5,length(beldes$dif_phys_base)-1)))
+
+p = ggplot(data = diffPlotData, aes(x = Condition, y = Difference, fill = Condition)) + guides(fill=FALSE)
+p = p + geom_bar(position=position_dodge(), stat="identity") + 
+    geom_errorbar(aes(ymin=Difference-ci, ymax=Difference+ci),
+                  width=.2,
+                  size = 2, # Width of the error bars
+                  position=position_dodge(.9))
+p + theme(text = element_text(size=20), axis.text.x = element_text(size=20))
+```
+
+```{r plot_area_differences, fig.path='Figures/', dev=c('png','postscript')}
+beldes$dif_bel_base = beldes$area_bel - beldes$area_base
+beldes$dif_des_base = beldes$area_des - beldes$area_base
+beldes$dif_phys_base = beldes$area_phys - beldes$area_base
+
+diffPlotData = data.frame(Condition = c("Belief>Baseline",
+                                        "Desire>Baseline",
+                                        "Physical>Baseline"),
+                          Difference = c(mean(beldes$dif_bel_base,na.rm=T),
+                                         mean(beldes$dif_des_base,na.rm=T),
+                                         mean(beldes$dif_phys_base,na.rm=T)),
+                          ci = c(
+                            std.error(beldes$dif_bel_base)*qt(.95/2+.5,length(beldes$dif_bel_base)-1),
+                            std.error(beldes$dif_des_base)*qt(.95/2+.5,length(beldes$dif_des_base)-1),
+                            std.error(beldes$dif_phys_base)*qt(.95/2+.5,length(beldes$dif_phys_base)-1)))
+
+p = ggplot(data = diffPlotData, aes(x = Condition, y = Difference, fill = Condition)) + guides(fill=FALSE)
+p = p + geom_bar(position=position_dodge(), stat="identity") + 
+    geom_errorbar(aes(ymin=Difference-ci, ymax=Difference+ci),
+                  width=.2,
+                  size = 2, # Width of the error bars
+                  position=position_dodge(.9))
+p + theme(text = element_text(size=20), axis.text.x = element_text(size=20))
+```
+
+```{r plot_mean_differences_L19, fig.path='Figures/', dev=c('png','postscript'), eval=TRUE}
+beldes$dif_bel_base_L19 = beldes$mean_bel_L19 - beldes$mean_base_L19
+beldes$dif_des_base_L19 = beldes$mean_des_L19 - beldes$mean_base_L19
+beldes$dif_phys_base_L19 = beldes$mean_phys_L19 - beldes$mean_base_L19
+
+diffPlotData = data.frame(Condition = c("Belief>Baseline",
+                                        "Desire>Baseline",
+                                        "Physical>Baseline"),
+                          Difference = c(mean(beldes$dif_bel_base_L19,na.rm=T),
+                                         mean(beldes$dif_des_base_L19,na.rm=T),
+                                         mean(beldes$dif_phys_base_L19,na.rm=T)),
+                          ci = c(
+                            std.error(beldes$dif_bel_base_L19)*qt(.95/2+.5,length(beldes$dif_bel_base_L19)-1),
+                            std.error(beldes$dif_des_base_L19)*qt(.95/2+.5,length(beldes$dif_des_base_L19)-1),
+                            std.error(beldes$dif_phys_base_L19)*qt(.95/2+.5,length(beldes$dif_phys_base_L19)-1)))
+
+p = ggplot(data = diffPlotData, aes(x = Condition, y = Difference, fill = Condition)) + guides(fill=FALSE)
+p = p + geom_bar(position=position_dodge(), stat="identity") + 
+    geom_errorbar(aes(ymin=Difference-ci, ymax=Difference+ci),
+                  width=.2,
+                  size = 2, # Width of the error bars
+                  position=position_dodge(.9))
+p + theme(text = element_text(size=20), axis.text.x = element_text(size=20))
+
+```
+
+```{r plot_area_differences_L19, fig.path='Figures/', dev=c('png','postscript'), eval=TRUE}
+beldes$difa_bel_base_L19 = beldes$area_bel_L19 - beldes$area_base_L19
+beldes$difa_des_base_L19 = beldes$area_des_L19 - beldes$area_base_L19
+beldes$difa_phys_base_L19 = beldes$area_phys_L19 - beldes$area_base_L1
+
+diffPlotData = data.frame(Condition = c("Belief>Baseline",
+                                        "Desire>Baseline",
+                                        "Physical>Baseline"),
+                          Difference = c(mean(beldes$difa_bel_base_L19,na.rm=T),
+                                         mean(beldes$difa_des_base_L19,na.rm=T),
+                                         mean(beldes$difa_phys_base_L19,na.rm=T)),
+                          ci = c(
+                            std.error(beldes$difa_bel_base_L19)*qt(.95/2+.5,length(beldes$difa_bel_base_L19)-1),
+                            std.error(beldes$difa_des_base_L19)*qt(.95/2+.5,length(beldes$difa_des_base_L19)-1),
+                            std.error(beldes$difa_phys_base_L19)*qt(.95/2+.5,length(beldes$difa_phys_base_L19)-1)))
+                          
+p = ggplot(data = diffPlotData, aes(x = Condition, y = Difference, fill = Condition)) + guides(fill=FALSE)
+p = p + geom_bar(position=position_dodge(), stat="identity") + 
+    geom_errorbar(aes(ymin=Difference-ci, ymax=Difference+ci),
+                  width=.2,
+                  size = 2, # Width of the error bars
+                  position=position_dodge(.9))
+p + theme(text = element_text(size=20), axis.text.x = element_text(size=20))
+
+```

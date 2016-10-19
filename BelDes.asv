@@ -44,8 +44,8 @@ for k = 1 : length(group.subjs)
       bel_J19 = group.subjs(k).procResult.dcAvg(:, 1, 25, belief);
       bel_L19_HbR = group.subjs(k).procResult.dcAvg(:, 2, 29, belief);
       bel_J19_HbR = group.subjs(k).procResult.dcAvg(:, 2, 25, belief);
-      base_L19 = group.subjs(k).procResult.dcAvg(baseline_start:baseline_end, 1, 29, baseline);
-      base_J19 = group.subjs(k).procResult.dcAvg(baseline_start:baseline_end, 1, 25, baseline);
+      base_L19 = group.subjs(k).procResult.dcAvg(1:baseline_end, 1, 29, baseline);
+      base_J19 = group.subjs(k).procResult.dcAvg(1:baseline_end, 1, 25, baseline);
       
       %Mean HbO calculations
       mean_start = find(group.subjs(k).procResult.tHRF>=0, 1 );
@@ -60,8 +60,8 @@ for k = 1 : length(group.subjs)
       mean_base_J19 = mean(base_J19);
       
       %Area under curve calculations
-      area_start = find(group.subjs(k).procResult.tHRF>=5.5, 1 );
-      area_end = find(group.subjs(k).procResult.tHRF<=20.5, 1,'last' );
+      area_start = find(group.subjs(k).procResult.tHRF>=9, 1 );
+      area_end = find(group.subjs(k).procResult.tHRF<=24, 1,'last' );
 
       area_phys_L19 = sum(phys_L19(area_start:area_end));
       area_phys_J19 = sum(phys_J19(area_start:area_end));
@@ -69,8 +69,8 @@ for k = 1 : length(group.subjs)
       area_des_J19 = sum(des_J19(area_start:area_end));
       area_bel_L19 = sum(bel_L19(area_start:area_end));
       area_bel_J19 = sum(bel_J19(area_start:area_end));
-      area_base_L19 = sum(base_L19);
-      area_base_J19 = sum(base_J19);
+      area_base_L19 = sum(base_L19(1:baseline_end));
+      area_base_J19 = sum(base_J19(1:baseline_end));
       
       %Max HbO calculations
       max_start = find(group.subjs(k).procResult.tHRF>=2, 1 );
